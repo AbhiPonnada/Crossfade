@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CROSSFADE</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #080808; --surface: #111; --surface2: #181818;
+    --accent: #c8f135; --accent2: #ff4d6d; --accent3: #00d4ff;
+    --text: #f0f0f0; --muted: #555; --border: #222;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Mono',monospace; min-height:100vh; overflow-x:hidden; }
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image:linear-gradient(rgba(200,241,53,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(200,241,53,.03) 1px,transparent 1px);
+    background-size:40px 40px;
+  }
+  .container { position:relative; z-index:1; max-width:860px; margin:0 auto; padding:48px 24px; }
+
+  header { margin-bottom:48px; }
+  h1 { font-family:'Bebas Neue',sans-serif; font-size:clamp(52px,10vw,96px); color:var(--accent); letter-spacing:4px; line-height:1; text-shadow:0 0 60px rgba(200,241,53,.3); }
+  .tagline { font-size:11px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; margin-top:4px; }
+
+  /* Upload */
+  .upload-zone {
+    border:1px dashed var(--muted); padding:36px; text-align:center;
+    cursor:pointer; background:var(--surface); margin-bottom:24px;
+    transition:all .2s; position:relative; overflow:hidden;
+  }
+  .upload-zone:hover,.upload-zone.drag-over { border-color:var(--accent); border-style:solid; }
+  .upload-zone p { font-size:12px; color:var(--muted); letter-spacing:1px; }
+  .upload-zone strong { color:var(--accent); }
+  .upload-icon { font-size:26px; margin-bottom:8px; display:block; }
+  input[type=file] { display:none; }
+
+  /* Player card */
+  .player-card { background:var(--surface); border:1px solid var(--border); padding:24px; margin-bottom:20px; }
+
+  .now-label { font-size:9px; letter-spacing:3px; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .song-title { font-size:16px; min-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:4px; }
+  .next-label { font-size:9px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:3px; margin-top:10px; }
+  .next-title { font-size:11px; color:var(--muted); min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:20px; }
+
+  /* Visualizer */
+  .visualizer { display:flex; align-items:flex-end; gap:2px; height:48px; margin-bottom:16px; }
+  .viz-bar { flex:1; background:var(--accent); min-height:2px; opacity:.7; border-radius:1px 1px 0 0; }
+
+  /* Timeline / progress */
+  .progress-wrap { margin-bottom:8px; }
+  .progress-track { height:4px; background:var(--border); position:relative; cursor:pointer; border-radius:2px; overflow:hidden; }
+  .progress-fill { height:100%; background:var(--accent); width:0%; border-radius:2px; pointer-events:none; position:relative; transition:width .1s linear; }
+  .crossfade-zone { position:absolute; top:0; right:0; height:100%; background:linear-gradient(90deg,transparent,var(--accent2)); opacity:0; transition:opacity .3s; pointer-events:none; }
+  .crossfade-zone.active { opacity:1; }
+
+  .time-row { display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--muted); letter-spacing:1px; margin-top:6px; }
+
+  .crossfade-pill {
+    font-size:9px; letter-spacing:2px; text-transform:uppercase;
+    background:var(--accent2); color:#fff; padding:2px 8px; border-radius:2px;
+    animation:pulse 1s ease-in-out infinite; display:none;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* BPM + Tempo */
+  .meta-row { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .meta-chip {
+    background:var(--surface2); border:1px solid var(--border);
+    padding:8px 14px; font-size:11px; letter-spacing:1px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .meta-chip .chip-label { font-size:9px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; }
+  .meta-chip .chip-value { color:var(--accent); font-size:14px; }
+  .bpm-bar { display:flex; gap:3px; align-items:center; }
+  .bpm-tick { width:3px; height:12px; background:var(--border); border-radius:1px; transition:background .15s; }
+  .bpm-tick.active { background:var(--accent); }
+
+  /* Controls */
+  .controls { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; }
+  .btn {
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px;
+    text-transform:uppercase; padding:12px 20px; cursor:pointer; transition:all .15s;
+  }
+  .btn:hover { border-color:var(--accent); color:var(--accent); }
+  .btn-primary { background:var(--accent); color:#000; border-color:var(--accent); font-weight:500; }
+  .btn-primary:hover { background:#d4ff3d; border-color:#d4ff3d; color:#000; }
+  .btn-danger:hover { border-color:var(--accent2); color:var(--accent2); }
+
+  /* Song list */
+  .section-label { font-size:10px; letter-spacing:3px; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+  .song-list { display:flex; flex-direction:column; gap:6px; margin-bottom:24px; }
+  .song-item {
+    display:flex; align-items:center; gap:12px;
+    background:var(--surface); border:1px solid var(--border);
+    padding:10px 14px; font-size:12px; transition:all .2s; animation:slideIn .3s ease;
+    cursor:pointer;
+  }
+  .song-item:hover { border-color:var(--muted); }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+  .song-num { font-size:10px; color:var(--muted); width:18px; text-align:right; flex-shrink:0; }
+  .song-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .song-bpm { font-size:10px; color:var(--accent3); letter-spacing:1px; flex-shrink:0; }
+  .song-bpm.loading { color:var(--muted); }
+
+  .status-bar { font-size:10px; letter-spacing:1px; color:var(--muted); padding:10px 0; border-top:1px solid var(--border); min-height:36px; }
+  .status-bar.active { color:var(--accent); }
+  .status-bar.error { color:var(--accent2); }
+
+  .empty { text-align:center; padding:32px; color:var(--muted); font-size:11px; letter-spacing:1px; }
+
+  .kbd-hints { display:flex; gap:20px; flex-wrap:wrap; margin-top:24px; padding-top:20px; border-top:1px solid var(--border); }
+  .kbd-hint { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--muted); letter-spacing:1px; }
+  kbd { background:var(--surface2); border:1px solid var(--border); padding:2px 7px; font-family:'DM Mono',monospace; font-size:10px; color:var(--text); border-radius:2px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>CROSSFADE</h1>
+    <div class="tagline">local music player</div>
+  </header>
+
+  <!-- Upload -->
+  <div class="upload-zone" id="uploadZone">
+    <span class="upload-icon">⊕</span>
+    <p><strong>Drop songs here</strong> or click to browse</p>
+    <p style="margin-top:6px;">MP3 · WAV · FLAC · OGG · AAC</p>
+    <input type="file" id="fileInput" multiple accept="audio/*"/>
+  </div>
+
+  <!-- Player card -->
+  <div class="player-card">
+    <div class="now-label">Now Playing</div>
+    <div class="song-title" id="currentTitle">—</div>
+    <div class="next-label">Up Next</div>
+    <div class="next-title" id="nextTitle">—</div>
+
+    <!-- Meta: BPM + Tempo -->
+    <div class="meta-row">
+      <div class="meta-chip">
+        <div>
+          <div class="chip-label">BPM</div>
+          <div class="chip-value" id="bpmValue">—</div>
+        </div>
+        <div class="bpm-bar" id="bpmBar"></div>
+      </div>
+      <div class="meta-chip">
+        <div>
+          <div class="chip-label">Tempo</div>
+          <div class="chip-value" id="tempoValue">—</div>
+        </div>
+      </div>
+      <div class="meta-chip">
+        <div>
+          <div class="chip-label">Elapsed</div>
+          <div class="chip-value" id="elapsedValue">0:00</div>
+        </div>
+      </div>
+      <div class="meta-chip">
+        <div>
+          <div class="chip-label">Duration</div>
+          <div class="chip-value" id="durationValue">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visualizer -->
+    <div class="visualizer" id="visualizer"></div>
+
+    <!-- Timeline -->
+    <div class="progress-wrap">
+      <div class="progress-track" id="progressTrack">
+        <div class="progress-fill" id="progressFill">
+          <div class="crossfade-zone" id="crossfadeZone"></div>
+        </div>
+      </div>
+      <div class="time-row">
+        <span id="currentTime">0:00</span>
+        <span class="crossfade-pill" id="crossfadePill">⟳ crossfading</span>
+        <span id="totalTime">0:00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-primary" id="playBtn" onclick="control('play')">▶ PLAY</button>
+    <button class="btn" onclick="control('pause')">⏸ PAUSE</button>
+    <button class="btn" onclick="control('skip')">+10s</button>
+    <button class="btn" onclick="control('next')">⏭ NEXT</button>
+    <button class="btn btn-danger" onclick="control('stop')">■ STOP</button>
+  </div>
+
+  <!-- Song list -->
+  <div class="section-label">Queue</div>
+  <div class="song-list" id="songList">
+    <div class="empty">No songs yet — upload some above</div>
+  </div>
+
+  <div class="status-bar" id="statusBar">Ready.</div>
+
+  <div class="kbd-hints">
+    <div class="kbd-hint"><kbd>Space</kbd> Play / Pause</div>
+    <div class="kbd-hint"><kbd>→</kbd> +10 seconds</div>
+    <div class="kbd-hint"><kbd>N</kbd> Next</div>
+    <div class="kbd-hint"><kbd>Esc</kbd> Stop</div>
+  </div>
+</div>
+
+<script>
+// ─── Visualizer bars ─────────────────────────────────────────────
+const vizEl = document.getElementById('visualizer');
+const vizBars = [];
+for (let i = 0; i < 40; i++) {
+  const b = document.createElement('div');
+  b.className = 'viz-bar';
+  b.style.height = '2px';
+  vizEl.appendChild(b);
+  vizBars.push(b);
+}
+
+// BPM bar ticks
+const bpmBarEl = document.getElementById('bpmBar');
+const bpmTicks = [];
+for (let i = 0; i < 16; i++) {
+  const t = document.createElement('div');
+  t.className = 'bpm-tick';
+  bpmBarEl.appendChild(t);
+  bpmTicks.push(t);
+}
+
+// ─── State ───────────────────────────────────────────────────────
+let isPlaying = false;
+let elapsed = 0;
+let duration = 0;
+let currentSong = '';
+let bpmValue = 0;
+let bpmInterval = null;
+let bpmTick = 0;
+let songBpmCache = {};
+let vizInterval = null;
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function formatTime(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+}
+
+function setStatus(msg, type='') {
+  const el = document.getElementById('statusBar');
+  el.textContent = msg;
+  el.className = 'status-bar ' + type;
+}
+
+function getTempoLabel(bpm) {
+  if (!bpm) return '—';
+  if (bpm < 60) return 'Largo';
+  if (bpm < 76) return 'Adagio';
+  if (bpm < 108) return 'Andante';
+  if (bpm < 120) return 'Moderato';
+  if (bpm < 156) return 'Allegro';
+  if (bpm < 176) return 'Vivace';
+  return 'Presto';
+}
+
+// ─── BPM beat animation ──────────────────────────────────────────
+function startBpmAnimation(bpm) {
+  if (bpmInterval) clearInterval(bpmInterval);
+  if (!bpm) return;
+  const intervalMs = (60 / bpm) * 1000;
+  bpmTick = 0;
+  bpmInterval = setInterval(() => {
+    bpmTicks.forEach((t, i) => t.classList.toggle('active', i === bpmTick % bpmTicks.length));
+    bpmTick++;
+  }, intervalMs);
+}
+
+function stopBpmAnimation() {
+  if (bpmInterval) clearInterval(bpmInterval);
+  bpmTicks.forEach(t => t.classList.remove('active'));
+}
+
+// ─── Fake visualizer (server-side audio, no Web Audio API access) ─
+function startViz() {
+  stopViz();
+  vizInterval = setInterval(() => {
+    if (!isPlaying) return;
+    vizBars.forEach(bar => {
+      const h = Math.random() * 44 + 4;
+      bar.style.height = h + 'px';
+      bar.style.opacity = 0.4 + Math.random() * 0.6;
+    });
+  }, 80);
+}
+
+function stopViz() {
+  if (vizInterval) clearInterval(vizInterval);
+  vizBars.forEach(b => { b.style.height = '2px'; b.style.opacity = '0.7'; });
+}
+
+// ─── Elapsed timer ───────────────────────────────────────────────
+let elapsedTimer = null;
+let elapsedStart = 0;
+let elapsedBase = 0;
+
+function startElapsed() {
+  stopElapsed();
+  elapsedStart = Date.now();
+  elapsedTimer = setInterval(() => {
+    elapsed = elapsedBase + (Date.now() - elapsedStart) / 1000;
+    document.getElementById('elapsedValue').textContent = formatTime(elapsed);
+    document.getElementById('currentTime').textContent = formatTime(elapsed);
+
+    if (duration > 0) {
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      document.getElementById('progressFill').style.width = pct + '%';
+
+      // Crossfade zone — last 7 seconds
+      const fadeStart = duration - 7;
+      const crossfadeZone = document.getElementById('crossfadeZone');
+      const pill = document.getElementById('crossfadePill');
+      if (elapsed >= fadeStart && fadeStart > 0) {
+        crossfadeZone.classList.add('active');
+        pill.style.display = 'block';
+        const fadePct = Math.min(100, ((elapsed - fadeStart) / 7) * 100);
+        crossfadeZone.style.width = fadePct + '%';
+      } else {
+        crossfadeZone.classList.remove('active');
+        pill.style.display = 'none';
+      }
+    }
+  }, 500);
+}
+
+function stopElapsed() {
+  if (elapsedTimer) clearInterval(elapsedTimer);
+  elapsed = 0;
+  elapsedBase = 0;
+}
+
+// ─── Fetch BPM for a song ─────────────────────────────────────────
+async function fetchBpm(filename) {
+  if (songBpmCache[filename]) return songBpmCache[filename];
+  try {
+    const res = await fetch(`/bpm/${encodeURIComponent(filename)}`);
+    const data = await res.json();
+    if (data.bpm) {
+      songBpmCache[filename] = data.bpm;
+      return data.bpm;
+    }
+  } catch(e) {}
+  return null;
+}
+
+// ─── Update player UI ────────────────────────────────────────────
+async function updatePlayerUI(current, next, playing) {
+  const songChanged = current && current !== currentSong;
+  currentSong = current || '';
+
+  document.getElementById('currentTitle').textContent = current || '—';
+  document.getElementById('nextTitle').textContent = next || '—';
+  document.getElementById('playBtn').textContent = playing ? '⏸ PAUSE' : '▶ PLAY';
+
+  if (playing && !isPlaying) {
+    startViz();
+    startElapsed();
+  } else if (!playing && isPlaying) {
+    stopViz();
+    stopElapsed();
+    stopBpmAnimation();
+    document.getElementById('bpmValue').textContent = '—';
+    document.getElementById('tempoValue').textContent = '—';
+    document.getElementById('progressFill').style.width = '0%';
+    document.getElementById('currentTime').textContent = '0:00';
+    document.getElementById('elapsedValue').textContent = '0:00';
+  }
+
+  isPlaying = playing;
+
+  // Fetch BPM when song changes
+  if (songChanged && current) {
+    document.getElementById('bpmValue').textContent = '...';
+    document.getElementById('tempoValue').textContent = '...';
+    elapsedBase = 0;
+    elapsedStart = Date.now();
+
+    const bpm = await fetchBpm(current);
+    if (bpm) {
+      bpmValue = bpm;
+      document.getElementById('bpmValue').textContent = bpm;
+      document.getElementById('tempoValue').textContent = getTempoLabel(bpm);
+      startBpmAnimation(bpm);
+
+      // Update BPM in song list
+      const items = document.querySelectorAll('.song-bpm');
+      items.forEach(el => {
+        if (el.dataset.name === current) {
+          el.textContent = bpm + ' BPM';
+          el.classList.remove('loading');
+        }
+      });
+    } else {
+      document.getElementById('bpmValue').textContent = '—';
+      document.getElementById('tempoValue').textContent = '—';
+    }
+  }
+}
+
+// ─── Control ─────────────────────────────────────────────────────
+async function control(action) {
+  try {
+    const res = await fetch(`/control/${action}`, { method:'POST' });
+    const data = await res.json();
+    setStatus(`${action}: ${data.status}`, 'active');
+    if (action === 'stop') {
+      stopViz(); stopElapsed(); stopBpmAnimation();
+      isPlaying = false;
+      document.getElementById('currentTitle').textContent = '—';
+      document.getElementById('nextTitle').textContent = '—';
+      document.getElementById('bpmValue').textContent = '—';
+      document.getElementById('tempoValue').textContent = '—';
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('playBtn').textContent = '▶ PLAY';
+    }
+  } catch(e) { setStatus('Error: could not reach server.', 'error'); }
+}
+
+// ─── Load songs ──────────────────────────────────────────────────
+async function loadSongs() {
+  try {
+    const res = await fetch('/songs');
+    const data = await res.json();
+    const el = document.getElementById('songList');
+    if (!data.songs.length) {
+      el.innerHTML = '<div class="empty">No songs yet — upload some above</div>';
+      return;
+    }
+    el.innerHTML = data.songs.map((s, i) => {
+      const cached = songBpmCache[s];
+      return `
+        <div class="song-item">
+          <span class="song-num">${i+1}</span>
+          <span class="song-name">${s}</span>
+          <span class="song-bpm ${cached ? '' : 'loading'}" data-name="${s}">
+            ${cached ? cached + ' BPM' : '...'}
+          </span>
+        </div>`;
+    }).join('');
+
+    // Fetch BPM for all songs in background
+    data.songs.forEach(async s => {
+      if (!songBpmCache[s]) {
+        const bpm = await fetchBpm(s);
+        if (bpm) {
+          const el = document.querySelector(`.song-bpm[data-name="${s}"]`);
+          if (el) { el.textContent = bpm + ' BPM'; el.classList.remove('loading'); }
+        }
+      }
+    });
+  } catch(e) {}
+}
+
+// ─── Poll status ─────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const res = await fetch('/status');
+    const data = await res.json();
+    await updatePlayerUI(data.current, data.next, data.is_playing);
+  } catch(e) {}
+}
+
+// ─── Upload ──────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+uploadZone.onclick = () => fileInput.click();
+fileInput.onchange = e => uploadFiles(e.target.files);
+uploadZone.ondragover = e => { e.preventDefault(); uploadZone.classList.add('drag-over'); };
+uploadZone.ondragleave = () => uploadZone.classList.remove('drag-over');
+uploadZone.ondrop = e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); uploadFiles(e.dataTransfer.files); };
+
+async function uploadFiles(files) {
+  const audio = Array.from(files).filter(f => f.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|aac|m4a)$/i.test(f.name));
+  if (!audio.length) { setStatus('No audio files found.', 'error'); return; }
+  setStatus(`Uploading ${audio.length} file(s)...`, 'active');
+  const form = new FormData();
+  audio.forEach(f => form.append('songs', f));
+  try {
+    const res = await fetch('/upload', { method:'POST', body:form });
+    const data = await res.json();
+    if (data.saved) {
+      setStatus(`✓ Uploaded: ${data.saved.join(', ')}`, 'active');
+      loadSongs();
+    } else {
+      setStatus(data.error || 'Upload failed.', 'error');
+    }
+  } catch(e) { setStatus('Upload error.', 'error'); }
+}
+
+// ─── Keyboard shortcuts ──────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === ' ') { e.preventDefault(); control('play'); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); control('skip'); }
+  else if (e.key === 'n' || e.key === 'N') control('next');
+  else if (e.key === 'Escape') control('stop');
+});
+
+// ─── Init ────────────────────────────────────────────────────────
+loadSongs();
+pollStatus();
+setInterval(pollStatus, 2000);
+setInterval(loadSongs, 8000);
+</script>
+</body>
+</html>
